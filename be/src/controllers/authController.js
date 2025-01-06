@@ -6,8 +6,8 @@ const ApiError = require("../utils/ApiError");
 const ApiResponse = require("../utils/ApiResponse");
 
 const register = asyncHandler(async (req, res) => {
-  const { name, email, password, role } = req.body;
-  if ([name, email, password, role].some((item) => item.trim() === "")) {
+  let { name, email, password, role } = req.body;
+  if ([name, email, password].some((item) => item.trim() === "")) {
     throw new ApiError(400, "All feilds are mandatory");
   }
 
@@ -21,6 +21,10 @@ const register = asyncHandler(async (req, res) => {
   }
 
   const hashedPassword = await bcrypt.hash(password, 10);
+
+  if(!role){
+    role = 'user';
+  }
 
   const user = await User.create({
     name,
@@ -36,7 +40,6 @@ const register = asyncHandler(async (req, res) => {
   if (!createdUser) {
     throw new ApiError(500, "User Registration failed");
   }
-  console.log(createdUser);
   return res
     .status(201)
     .json(new ApiResponse(201, createdUser, "User created successfully"));
@@ -53,7 +56,7 @@ const loginUser = asyncHandler(async (req, res) => {
     throw new ApiError(404, "The user does not exist");
   }
 
-  const passwordMatch = bcrypt.compare(password, user.password);
+  const passwordMatch = await bcrypt.compare(password, user.password);
 
   if (!passwordMatch) {
     throw new ApiError(400, "Invalid Credentials");
