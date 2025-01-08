@@ -3,6 +3,7 @@ const ApiError = require("../utils/ApiError");
 const ApiResponse = require("../utils/ApiResponse");
 const Car = require("../models/carModel");
 const Booking = require("../models/bookingModel");
+const Location = require("../models/locationModel");
 const { adjustDates } = require("../utils/helperFunctions");
 
 const searchAvailableCars = asyncHandler(async (req, res) => {
@@ -38,18 +39,17 @@ const searchAvailableCars = asyncHandler(async (req, res) => {
   for (let car of cars) {
     const bookings = await Booking.find({
       carId: car._id,
-      $or: [
-        { fromDate: { $lt: to }, toDate: { $gt: from } },
-      ],
-    });
-
-    const differenceInTime = to.getTime() - from.getTime();
-    const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
-
-    const carWithTotalPrice = car.toObject ? car.toObject() : { ...car };
-    carWithTotalPrice.totalPrice = car.rentalPrice * differenceInDays;
+      fromDate: { $lt: to },
+      toDate: { $gt: from },
+      status: { $in: ['pending', 'confirmed'] }
+    }).exec();
 
     if (bookings.length === 0) {
+      const differenceInTime = to.getTime() - from.getTime();
+      const differenceInDays = Math.ceil(differenceInTime / (1000 * 60 * 60 * 24));
+  
+      const carWithTotalPrice = car.toObject ? car.toObject() : { ...car };
+      carWithTotalPrice.totalPrice = car.rentalPrice * differenceInDays;
       availableCars.push(carWithTotalPrice);
     }
   }
@@ -77,14 +77,14 @@ const createBooking = asyncHandler(async (req,res) => {
     throw new ApiError(400, "Invalid date format.");
   }
 
-  const conflictingBooking = await Booking.findOne({
-    carId,
-    $or: [
-      { fromDate: { $lt: to }, toDate: { $gt: from } }
-    ]
-  });
+  const conflictingBooking = await Booking.find({
+      carId,
+      fromDate: { $lt: to },
+      toDate: { $gt: from },
+      status: { $in: ['pending', 'confirmed'] }
+    }).exec();
 
-  if (conflictingBooking) {
+  if (conflictingBooking?.length > 0) {
     throw new ApiError(409,"The selected car is already booked for the given date range.")
   }
 
@@ -94,13 +94,15 @@ const createBooking = asyncHandler(async (req,res) => {
     throw new ApiError(400,"Car not found.")
   }
 
+  const differenceInDays = Math.ceil((to - from) / (1000 * 60 * 60 * 24));
+
   const newBooking = await Booking.create({
     carId,
     locationId,
     customerId : id,
     fromDate: from,
     toDate: to,
-    totalAmount: car.rentalPrice * ((to.getTime() - from.getTime()) / (1000 * 60 * 60 * 24)),
+    totalAmount: car.rentalPrice * differenceInDays,
     status: "pending",
     paymentId: ''
   })
@@ -122,4 +124,36 @@ const getBookingOfUser = asyncHandler(async (req,res) => {
     );
 });
 
-module.exports={searchAvailableCars,createBooking,getBookingOfUser}
+const getDashboardData = asyncHandler(async (req,res) => {
+
+  const cars = await Car.countDocuments();
+
+  const locations = await Location.countDocuments();
+
+  const bookings = await Booking.countDocuments({ status: { $in: ['confirmed'] } });
+
+  const revenue = await Booking.aggregate([
+    { 
+      $match: { status: "confirmed" }
+    },
+    { 
+      $group: { 
+        _id:null,
+        totalRevenue: { $sum: "$totalAmount" }
+      } 
+    }
+  ])
+
+  const totalRevenue = revenue[0]?.totalRevenue || 0;
+
+  const data = {
+    cars,
+    locations,
+    bookings,
+    totalRevenue
+  }
+
+  return res.status(200).json(new ApiResponse(200,data,"Data retrived successfully"));
+})
+
+module.exports={searchAvailableCars,createBooking,getBookingOfUser,getDashboardData}

@@ -133,7 +133,39 @@ const verifyPayment = asyncHandler(async (req,res) => {
     return res.status(200).json( new ApiResponse(200,[],'payment verified successfully'))
 });
 
+const cancelPayment = asyncHandler(async (req,res) => {
+    const { paymentId } = req.query;
+
+    if(!paymentId){
+        throw new ApiError(400,"Payment is missing");
+    }
+
+    const payment = await Payment.findOneAndUpdate(
+        {_id:paymentId},
+        {
+            $set: {
+                transactionStatus:'failed'
+            },
+        },
+        { new: true }
+    );
+
+    const booking = await Booking.findOneAndUpdate(
+        {_id:payment.bookingId},
+        {
+            $set:{
+                status:"cancelled"
+            } 
+        },
+        { new: true }
+    )
+
+    return res
+        .status(200)
+        .json( new ApiResponse(200,[],'payment cancelled successfully'))
+})
 
 
 
-module.exports={ createOrderId,verifyPayment }
+
+module.exports={ createOrderId,verifyPayment,cancelPayment }
