@@ -156,4 +156,51 @@ const getDashboardData = asyncHandler(async (req,res) => {
   return res.status(200).json(new ApiResponse(200,data,"Data retrived successfully"));
 })
 
-module.exports={searchAvailableCars,createBooking,getBookingOfUser,getDashboardData}
+const getAllBookingData = asyncHandler(async (req,res) => {
+  const { page, locationId, search } = req.query;
+
+  const pageNumber = parseInt(page, 10);
+
+  const query = {};
+
+  if (locationId) {
+    query.locationId = locationId;
+  }
+
+  if (search) {
+    query.$expr = {
+      $gte: [
+        {
+          $indexOfCP: [
+            { $toString: "$_id" },
+            { $toLower: search }
+          ]
+        },
+        0
+      ]
+    };
+  }
+
+  const totalBookings = await Booking.countDocuments(query);
+  const bookings = await Booking.find(query)
+    .skip((pageNumber - 1) * 10)
+    .sort({ createdAt: -1 })
+    .populate('locationId','name')
+    .populate('carId','carName')
+    .populate('customerId', 'name');
+  
+  const data = {
+    totalBookings,
+    currentPage: pageNumber,
+    totalPages: Math.ceil(totalBookings / 10),
+    bookings
+  }
+
+  return res
+    .status(200)
+    .json(
+      new ApiResponse(200,data,"bokings retrived successfully")
+    );
+});
+
+module.exports={searchAvailableCars,createBooking,getBookingOfUser,getDashboardData,getAllBookingData}
